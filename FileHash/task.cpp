@@ -404,11 +404,11 @@ __lastBlock:
 	if (bLastBlock)
 	{
 		_Length = 0;
+	}
 
-		if (hHash)
-		{
-			goto __lastBlock;
-		}
+	if (!_Length && hHash)
+	{
+		goto __lastBlock;
 	}
 
 	return STATUS_SUCCESS;
