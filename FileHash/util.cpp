@@ -58,10 +58,12 @@ NTSTATUS GetSeekPenalty(HANDLE hFile, BOOLEAN& SeekPenalty)
 		PVOID buf;
 		PWSTR psz;
 		POBJECT_NAME_INFORMATION poni;
+		PFILE_VOLUME_NAME_INFORMATION pfvni;
 	};
 
-	ULONG cb = 0, rcb = 0x20;
+	ULONG cb = 0, rcb = 0x40;
 	PVOID stack = alloca(guz);
+	bool bFileVolumeNameInformation = true;
 
 __loop:
 	if (cb < rcb)
@@ -69,16 +71,40 @@ __loop:
 		cb = RtlPointerToOffset(buf = alloca(rcb - cb), stack);
 	}
 
-	switch (status = NtQueryObject(hFile, ObjectNameInformation, buf, cb, &rcb))
+	status = bFileVolumeNameInformation
+		? NtQueryInformationFile(hFile, &iosb, buf, cb, FileVolumeNameInformation)
+		: NtQueryObject(hFile, ObjectNameInformation, buf, cb, &rcb);
+
+	switch (status)
 	{
-	case STATUS_BUFFER_TOO_SMALL:
 	case STATUS_BUFFER_OVERFLOW:
+		if (bFileVolumeNameInformation)
+		{
+			rcb = pfvni->DeviceNameLength + FIELD_OFFSET(FILE_VOLUME_NAME_INFORMATION, DeviceName);
+			goto __loop;
+		}
+	case STATUS_BUFFER_TOO_SMALL:
 	case STATUS_INFO_LENGTH_MISMATCH:
+		goto __loop;
+	}
+
+	if (0 > status && bFileVolumeNameInformation)
+	{
+		bFileVolumeNameInformation = false;
 		goto __loop;
 	}
 
 	if (0 <= status)
 	{
+		if (bFileVolumeNameInformation)
+		{
+			OBJECT_NAME_INFORMATION oni;
+			oni.Name.Buffer = pfvni->DeviceName;
+			oni.Name.MaximumLength = oni.Name.Length = (USHORT)pfvni->DeviceNameLength;
+			poni = &oni;
+			goto __FileVolumeName;
+		}
+
 		DbgPrint("%wZ\n", &poni->Name);
 
 		PFILE_NAME_INFORMATION pfni = (PFILE_NAME_INFORMATION)alloca(rcb);
@@ -89,15 +115,16 @@ __loop:
 
 			if (pfni->FileNameLength < poni->Name.Length)
 			{
-				if (!memcmp(pfni->FileName, 
-					RtlOffsetToPointer(poni->Name.Buffer, poni->Name.Length -= (USHORT)pfni->FileNameLength), 
+				if (!memcmp(pfni->FileName,
+					RtlOffsetToPointer(poni->Name.Buffer, poni->Name.Length -= (USHORT)pfni->FileNameLength),
 					pfni->FileNameLength))
 				{
-					DbgPrint("%wZ\n", &poni->Name);
-
+				__FileVolumeName:
 					OBJECT_ATTRIBUTES oa = { sizeof(oa), 0, &poni->Name };
 
-					if (0 <= (status = NtOpenFile(&oa.RootDirectory, SYNCHRONIZE, &oa, 
+					DbgPrint("%wZ\n", &poni->Name);
+
+					if (0 <= (status = NtOpenFile(&oa.RootDirectory, SYNCHRONIZE, &oa,
 						&iosb, FILE_SHARE_VALID_FLAGS, FILE_SYNCHRONOUS_IO_NONALERT)))
 					{
 						STORAGE_DEVICE_NUMBER sdn;
@@ -110,19 +137,19 @@ __loop:
 						if (0 <= status)
 						{
 							WCHAR Harddisk[64];
-							                  // L"\\Device\\Harddisk%d\\Partition0"
+							// L"\\Device\\Harddisk%d\\Partition0"
 							swprintf_s(Harddisk, L"\\GLOBAL??\\PhysicalDrive%d", sdn.DeviceNumber);
 
 							RtlInitUnicodeString(&poni->Name, Harddisk);
 
-							if (0 <= (status = NtOpenFile(&oa.RootDirectory, 
-								SYNCHRONIZE|FILE_READ_DATA|FILE_WRITE_DATA, &oa, 
+							if (0 <= (status = NtOpenFile(&oa.RootDirectory,
+								SYNCHRONIZE | FILE_READ_DATA | FILE_WRITE_DATA, &oa,
 								&iosb, FILE_SHARE_VALID_FLAGS, FILE_SYNCHRONOUS_IO_NONALERT)))
 							{
 								DEVICE_SEEK_PENALTY_DESCRIPTOR dspd;
 								static const STORAGE_PROPERTY_QUERY spq = { StorageDeviceSeekPenaltyProperty, PropertyStandardQuery };
 
-								status = NtDeviceIoControlFile(oa.RootDirectory, 0, 0, 0, &iosb, IOCTL_STORAGE_QUERY_PROPERTY, 
+								status = NtDeviceIoControlFile(oa.RootDirectory, 0, 0, 0, &iosb, IOCTL_STORAGE_QUERY_PROPERTY,
 									const_cast<STORAGE_PROPERTY_QUERY*>(&spq), sizeof(spq), &dspd, sizeof(dspd));
 
 								SeekPenalty = dspd.IncursSeekPenalty;

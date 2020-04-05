@@ -1,15 +1,17 @@
 #pragma once
 
-#include "../inc/rundown.h"
+#include "../inc/rundownT.h"
 #include "util.h"
 #include "hash.h"
 
 class CFragment;
 
-class CTask : public CObjRef
+class CTask : public CObjRef, public RundownProtection<CTask>
 {
 	friend CFragment;
+	friend RundownProtection<CTask>;
 
+	ULONGLONG _FileSize;
 	ULONGLONG _cbBlock;
 	ULONGLONG _cbFragment;
 	LONGLONG _nFragments;
@@ -17,7 +19,6 @@ class CTask : public CObjRef
 	BCRYPT_ALG_HANDLE _hAlgorithm;
 	CHashFile* _pHF;
 	HANDLE _hFile;
-	RundownProtection _HandleLock;
 	ULONG _AlignmentRequirement;
 	ULONG _SectorSize;
 	ULONG _cbIo;
@@ -36,27 +37,14 @@ class CTask : public CObjRef
 
 	void ReUseBlock(CFragment* pBlock);
 
-	_NODISCARD BOOL LockHandle()
+	void RundownCompleted()
 	{
-		return _HandleLock.Acquire();
-	}
-
-	void UnlockHandle()
-	{
-		if (_HandleLock.Release())
-		{
-			CancelIoEx(_hFile, 0);
-		}
+		CancelIoEx(_hFile, 0);
 	}
 
 	void SetBytesToProcess(ULONGLONG FileSize);
 
 public:
-
-	_NODISCARD BOOL IsRundownBegin()
-	{
-		return _HandleLock.IsRundownBegin();
-	}
 
 	NTSTATUS IsSeekPenalty(BOOLEAN& SeekPenalty)
 	{
@@ -70,11 +58,9 @@ public:
 
 	void Start(UCHAR nIoCount);
 
-	void Cancel();
-
 	NTSTATUS Create(HWND hwnd, PCWSTR pszFile, PCWSTR pszHashFile, PCWSTR pszAlgId, ULONGLONG cbBlock, BOOL bCachedIo);
 
-	CTask() : _hAlgorithm(0), _hFile(0), _pHF(0), _HandleLock(RundownProtection::v_init)
+	CTask() : _hAlgorithm(0), _hFile(0), _pHF(0), RundownProtection<CTask>(v_init)
 	{
 		DbgPrint("[%x]: [%u] %s<%p>\n", GetCurrentThreadId(), GetTickCount(), __FUNCTION__, this);
 	}

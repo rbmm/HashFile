@@ -27,15 +27,6 @@ void CTask::EndIo()
 	}
 }
 
-void CTask::Cancel()
-{
-	if (LockHandle())
-	{
-		_HandleLock.Rundown_l();
-		UnlockHandle();
-	}
-}
-
 void CTask::Start(UCHAR nIoCount)
 {
 	if (_nFragments < nIoCount)
@@ -106,7 +97,8 @@ NTSTATUS CTask::Create(HWND hwnd, PCWSTR pszFileName, PCWSTR pszHashFile, PCWSTR
 					_cbIo = SectorSize < _64kb ? roundUp((ULONG)_64kb, SectorSize) : SectorSize;
 					_cbFragment = cbBlock < _1Mb ? roundUp((ULONGLONG)_1Mb, cbBlock) : cbBlock;
 					_nFragments = (eof.QuadPart + _cbFragment - 1) / _cbFragment;
-					
+					_FileSize = eof.QuadPart;
+
 					SetBytesToProcess(eof.QuadPart);
 
 					_dwBytesInLastRead = (eof.QuadPart - roundDown(roundDown(eof.QuadPart, _cbFragment), SectorSize)) % _cbIo;
@@ -199,10 +191,10 @@ void CFragment::Read()
 
 	NTSTATUS status = STATUS_CANCELLED;
 
-	if (pTask->LockHandle())
+	if (pTask->AcquireRP())
 	{
 		status = NtReadFile(pTask->_hFile, 0, 0, this, this, GetIoBuffer(), (ULONG)min(Length, cbIo), &_ByteOffset, 0);
-		pTask->UnlockHandle();
+		pTask->ReleaseRP();
 	}
 
 	if (NT_ERROR(status))
@@ -237,11 +229,16 @@ void CFragment::Start(LONGLONG iFragment)
 
 	ULONGLONG cbFrarment = pTask->_cbFragment;
 
-	LONGLONG a = iFragment * cbFrarment, b = a + cbFrarment;
+	ULONGLONG a = iFragment * cbFrarment, b = a + cbFrarment, FileSize = pTask->_FileSize;
 
 	_x = a, _dwBlock = pTask->_cbBlock;
 
 	_ByteOffset.QuadPart = a = roundDown(a, SectorSize);
+
+	if (b > FileSize)
+	{
+		b = FileSize;
+	}
 
 	_Length = roundUp(b, SectorSize) - a;
 

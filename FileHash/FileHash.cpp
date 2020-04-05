@@ -109,7 +109,7 @@ struct DlgData
 			case IDABORT:
 				if (_pTask)
 				{
-					_pTask->Cancel();
+					_pTask->Rundown();
 					break;
 				}
 				EndDialog(hwnd, 0);
@@ -298,7 +298,7 @@ struct DlgData
 					BOOLEAN bPenalty;
 					if (0 <= pTask->IsSeekPenalty(bPenalty) && bPenalty)
 					{
-						if (MessageBoxW(hwnd, L"Disk have seek penalty !", L"use single I/O ?", MB_ICONQUESTION|MB_YESNO) == IDYES)
+						if (MessageBoxW(hwnd, L"use single I/O ?", L"Disk have seek penalty !", MB_ICONQUESTION|MB_YESNO) == IDYES)
 						{
 							nIO = 1;
 						}

@@ -43,7 +43,7 @@ BEGIN
     LTEXT           "Hash Algorithm:",IDC_STATIC,7,69,52,8
     COMBOBOX        IDC_COMBO2,67,67,49,30,CBS_DROPDOWN | WS_VSCROLL | WS_TABSTOP
     PUSHBUTTON      "Cancel",IDABORT,241,83,50,14,WS_DISABLED
-    RTEXT           "",IDC_STATIC1,128,69,106,8
+    RTEXT           "",IDC_STATIC1,128,69,220,8
 END
 
 
@@ -89,6 +89,17 @@ BEGIN
 END
 
 #endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// AFX_DIALOG_LAYOUT
+//
+
+IDD_DIALOG1 AFX_DIALOG_LAYOUT
+BEGIN
+    0
+END
 
 #endif    // English (United States) resources
 /////////////////////////////////////////////////////////////////////////////
